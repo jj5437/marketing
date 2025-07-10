@@ -83,14 +83,44 @@ const App = () => {
     setError('');
     setGeneratedText('');
 
+    const prompt = `请严格使用 ${selectedModel} 模型，对以下文案进行优化和重写，使其更具吸引力、说服力和传播性，更好的应用于短视频脚本创作领域。请直接输出优化后的文案，不要包含任何额外的解释或标题。原始文案：\n\n${inputText}`;
+
     try {
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const prompt = `请严格使用 ${selectedModel} 模型，对以下文案进行优化和重写，使其更具吸引力、说服力和传播性，更好的应用于短视频脚本创作领域。请直接输出优化后的文案，不要包含任何额外的解释或标题。原始文案：\n\n${inputText}`;
-      
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      let text = '';
+
+      if (import.meta.env.VITE_DEEPSEEK_API_KEY) {
+        const response = await fetch("https://api.deepseek.com/chat/completions", {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_DEEPSEEK_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: import.meta.env.VITE_DEEPSEEK_MODEL || "deepseek-reasoner",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.7,
+            stream: false
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`DeepSeek API 错误: ${errorData.error.message}`);
+        }
+        
+        const data = await response.json();
+        text = data.choices[0].message.content;
+
+      } else if (import.meta.env.VITE_GEMINI_API_KEY) {
+        const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        text = response.text();
+      } else {
+        throw new Error('请在 .env 文件中配置 VITE_DEEPSEEK_API_KEY 或 VITE_GEMINI_API_KEY');
+      }
       
       let i = 0;
       setGeneratedText(' ');
@@ -105,7 +135,8 @@ const App = () => {
       }, 20);
 
     } catch (err) {
-      setError('生成文案时出错，请检查您的API密钥和网络连接。');
+      const errorMessage = err.message || '请检查您的API密钥和网络连接。';
+      setError(`生成文案时出错: ${errorMessage}`);
       console.error(err);
       setIsLoading(false);
     }
